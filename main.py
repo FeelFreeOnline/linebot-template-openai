@@ -22,6 +22,9 @@ import aiohttp
 # ✅ 会話履歴を保存するメモリ（ユーザーごとに最大5ターン＝10メッセージ）
 user_memory = {}  # 例：user_id をキーにした辞書形式
 MAX_MEMORY = 5    # 5往復分（userとassistantのセットで10件）
+# ✅ ユーザーごとの月内通話回数（1往復＝1カウント）
+user_count = {}  # 形式： {user_id: {"count": 12, "month": "2025-07"}}
+MAX_TURNS_PER_MONTH = 30  # 月30往復まで
 
 from fastapi import Request, FastAPI, HTTPException
 from linebot import (
@@ -38,6 +41,7 @@ from linebot.models import (
 from dotenv import load_dotenv, find_dotenv
 _ = load_dotenv(find_dotenv())  # read local .env file
 
+from datetime import datetime  # ← 必ず import に追加されていること！
 
 # ✅ ユーザーごとの会話履歴を更新・制限する関数
 def update_user_memory(user_id, role, content):
@@ -50,10 +54,39 @@ def update_user_memory(user_id, role, content):
     if len(user_memory[user_id]) > MAX_MEMORY * 2:
         user_memory[user_id] = user_memory[user_id][-MAX_MEMORY * 2:]
 
+# ✅ ユーザーの利用回数チェックと記録
+def is_user_over_limit(user_id):
+    now_month = datetime.now().strftime("%Y-%m")
+    record = user_count.get(user_id)
+
+    # 初回 or 月が変わったらリセット
+    if not record or record["month"] != now_month:
+        user_count[user_id] = {"count": 0, "month": now_month}
+
+    # 制限超えチェック
+    if user_count[user_id]["count"] >= MAX_TURNS_PER_MONTH:
+        return True
+    else:
+        return False
+
+# ✅ カウントを1加算（1往復）
+def increment_user_count(user_id):
+    if user_id in user_count:
+        user_count[user_id]["count"] += 1
+
 # Initialize OpenAI API
 
 # ✅ GPTに会話履歴ごと送信し、応答を返す（キャラ＋履歴付き）
 def call_openai_chat_api(user_id, user_message):
+
+    # ✅ 月30往復の制限チェック
+    if is_user_over_limit(user_id):
+        return (
+            "今月はいっぱい話してくれてありがとう。\n"
+            "また来月話してほしいワン。\n"
+            "もし話したいことがあったら、ここを見てほしいワン！\n"
+            "👉 https://feelfreeonline.com/"
+        )
     openai.api_key = os.getenv('OPENAI_API_KEY', None)
 
     system_prompt = {
@@ -95,6 +128,9 @@ def call_openai_chat_api(user_id, user_message):
     # ✅ 新しい履歴を保存（user, assistant）
     update_user_memory(user_id, "user", user_message)
     update_user_memory(user_id, "assistant", reply_text)
+
+    # ✅ 月間カウントを加算（1往復）
+    increment_user_count(user_id)
 
     return reply_text
 

@@ -51,9 +51,11 @@ def call_openai_chat_api(user_message):
     return response.choices[0].message['content']
 
 
-# Get channel_secret and channel_access_token from your environment variable
-channel_secret = os.getenv('ChannelSecret', None)
-channel_access_token = os.getenv('ChannelAccessToken', None)
+# 修正後（正しい環境変数名に変更）
+channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
+channel_access_token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
+
+
 if channel_secret is None:
     print('Specify LINE_CHANNEL_SECRET as environment variable.')
     sys.exit(1)

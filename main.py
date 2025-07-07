@@ -43,9 +43,17 @@ def call_openai_chat_api(user_message):
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
+            {
+                "role": "system",
+                "content": (
+                    "あなたは犬のような口調で話す優しい臨床心理士です。"
+                    "語尾に『ワン』をつけて、相談者の気持ちに寄り添いながら、"
+                    "安心感のある返答をしてください。"
+                )
+            },
             {"role": "user", "content": user_message},
-        ]
+        ],
+        temperature=0.7
     )
 
     return response.choices[0].message['content']

@@ -150,7 +150,7 @@ def call_openai_chat_api(user_id, user_message):
     messages = [system_prompt] + history_with_input
 
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4-turbo",
         messages=messages,
         temperature=0.7
     )

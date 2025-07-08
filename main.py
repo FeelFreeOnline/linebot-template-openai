@@ -24,7 +24,7 @@ user_memory = {}  # 例：user_id をキーにした辞書形式
 MAX_MEMORY = 5    # 5往復分（userとassistantのセットで10件）
 # ✅ ユーザーごとの月内通話回数（1往復＝1カウント）
 user_count = {}  # 形式： {user_id: {"count": 12, "month": "2025-07"}}
-MAX_TURNS_PER_MONTH = 15  # 月15往復まで
+MAX_TURNS_PER_MONTH = 27 # 応答は最大26回目まで制御するため
 
 from fastapi import Request, FastAPI, HTTPException
 from linebot import (
@@ -59,15 +59,15 @@ def is_user_over_limit(user_id):
     now_month = datetime.now().strftime("%Y-%m")
     record = user_count.get(user_id)
 
-    # 初回 or 月が変わったらリセット
     if not record or record["month"] != now_month:
-        user_count[user_id] = {"count": 0, "month": now_month}
-
-    # 制限超えチェック
-    if user_count[user_id]["count"] >= MAX_TURNS_PER_MONTH:
-        return True
-    else:
+        user_count[user_id] = {
+            "count": 0,
+            "month": now_month,
+            "warned": False
+        }
         return False
+
+    return user_count[user_id]["count"] >= MAX_TURNS_PER_MONTH
 
 # ✅ カウントを1加算（1往復）
 def increment_user_count(user_id):
@@ -78,15 +78,20 @@ def increment_user_count(user_id):
 
 # ✅ GPTに会話履歴ごと送信し、応答を返す（キャラ＋履歴付き）
 def call_openai_chat_api(user_id, user_message):
+    record = user_count.get(user_id)
+    count = record["count"] if record else 0
 
-    # ✅ 月30往復の制限チェック
     if is_user_over_limit(user_id):
-        return (
-            "今月はいっぱい話してくれてありがとう。\n"
-            "また来月話してほしいワン。\n"
-            "もし話したいことがあったら、ここを見てほしいワン！\n"
-            "👉 https://feelfreeonline.com/"
-        )
+        return None  # 27回目以降：完全に無視
+
+    # ✅ 月間カウントを加算（1往復）
+    increment_user_count(user_id)
+
+    if count >= 25:
+        return "システム上、これ以上の応答はできないワン…また来月お話ししてほしいワン。"
+    elif 15 <= count < 25:
+        return "今月はいっぱい話してくれてありがとう。\nまた来月話してほしいワン。"
+
     openai.api_key = os.getenv('OPENAI_API_KEY', None)
 
     system_prompt = {
@@ -149,13 +154,15 @@ def call_openai_chat_api(user_id, user_message):
     # system_prompt + 履歴 + 今回のuser入力 を送信
     messages = [system_prompt] + history_with_input
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4-turbo",
-        messages=messages,
-        temperature=0.7
-    )
-
-    reply_text = response.choices[0].message['content'].strip()
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4-turbo",
+            messages=messages,
+            temperature=0.7
+        )
+        reply_text = response.choices[0].message['content'].strip()
+    except Exception as e:
+        reply_text = "ごめんなさいワン、うまくお話できなかったワン…時間をおいて試してほしいワン。"
 
     # ✅ 新しい履歴を保存（user, assistant）
     update_user_memory(user_id, "user", user_message)
@@ -191,7 +198,6 @@ parser = WebhookParser(channel_secret)
 async def handle_callback(request: Request):
     signature = request.headers['X-Line-Signature']
 
-    # get request body as text
     body = await request.body()
     body = body.decode()
 
@@ -206,12 +212,14 @@ async def handle_callback(request: Request):
         if not isinstance(event.message, TextMessage):
             continue
 
-        # ✅ LINEのユーザーIDを渡すように変更
+        # ✅ 応答取得
         result = call_openai_chat_api(event.source.user_id, event.message.text)
 
-        await line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=result)
-        )
+        # ✅ 応答があるときのみLINEに送信
+        if result:
+            await line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=result)
+            )
 
     return 'OK'

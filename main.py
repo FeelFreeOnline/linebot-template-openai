@@ -24,7 +24,7 @@ user_memory = {}  # 例：user_id をキーにした辞書形式
 MAX_MEMORY = 5    # 5往復分（userとassistantのセットで10件）
 # ✅ ユーザーごとの月内通話回数（1往復＝1カウント）
 user_count = {}  # 形式： {user_id: {"count": 12, "month": "2025-07"}}
-MAX_TURNS_PER_MONTH = 30  # 月30往復まで
+MAX_TURNS_PER_MONTH = 15  # 月15往復まで
 
 from fastapi import Request, FastAPI, HTTPException
 from linebot import (
